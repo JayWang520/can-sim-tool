@@ -1,0 +1,11 @@
+CAN 模拟收发工具 - 免安装版使用说明
+
+1. 请先完整解压本压缩包，不要直接在压缩包内双击运行。
+2. 解压后进入 CanSimTool 文件夹。
+3. 双击 CanSimTool.exe 启动。
+   也可以双击 启动CanSimTool.bat 启动。
+
+注意：
+- CanSimTool.exe 必须和 _internal 文件夹放在同一目录，不能单独复制 exe。
+- 如果只复制 CanSimTool.exe，会报 Failed to load Python DLL 或无法执行。
+- 日志/配置保存在 CanSimTool 文件夹内的 logs / presets / dbcs\uploads。

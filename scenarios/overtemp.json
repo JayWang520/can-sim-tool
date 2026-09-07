@@ -1,0 +1,9 @@
+{
+  "name": "水温过高（单包）",
+  "description": "SPN 110 / FMI 0：发动机冷却液温度超过上限，红灯+保护灯常亮",
+  "dtcs": [{ "spn": 110, "fmi": 0, "oc": 1 }],
+  "lamps": { "mil": "off", "red": "on", "amber": "off", "protect": "on" },
+  "sa": 0,
+  "priority": 6,
+  "period_ms": 1000
+}

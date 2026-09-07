@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAN 模拟收发工具</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>CAN 模拟收发工具 <span class="sub">J1939</span></h1>
+  <div id="conn-badge" class="badge off">未连接</div>
+  <div id="stats" class="stats"></div>
+</header>
+
+<nav>
+  <button class="tab active" data-tab="tab-bus">总线</button>
+  <button class="tab" data-tab="tab-rx">接收</button>
+  <button class="tab" data-tab="tab-tx">发送</button>
+  <button class="tab" data-tab="tab-dm1">故障模拟</button>
+  <button class="tab" data-tab="tab-log">日志</button>
+  <button class="tab" data-tab="tab-trig">触发</button>
+</nav>
+
+<!-- ================= 总线 ================= -->
+<section id="tab-bus" class="panel active">
+  <div class="card">
+    <h3>连接</h3>
+    <div class="form-row">
+      <label>后端</label>
+      <select id="bus-iface"></select>
+      <label>通道</label>
+      <input id="bus-channel" value="test" size="14">
+      <label>波特率</label>
+      <input id="bus-bitrate" value="250000" size="8">
+      <button id="btn-connect" class="primary">连接</button>
+      <button id="btn-disconnect">断开</button>
+    </div>
+    <p class="hint" id="iface-desc"></p>
+    <div class="kv" id="bus-info"></div>
+  </div>
+  <div class="card">
+    <h3>文件保存路径（重启后仍生效）</h3>
+    <div class="form-row">
+      <label>日志目录</label><input id="set-logs" size="32" placeholder="如 D:\can\logs 或 /home/user/can/logs">
+      <label>配置目录</label><input id="set-presets" size="32" placeholder="保存的周期任务/故障现场">
+      <button id="btn-settings" class="primary">应用</button>
+      <button id="btn-settings-reset">恢复默认</button>
+    </div>
+    <p class="hint">改为自定义路径后，日志和配置现场都存到新目录（旧文件留在原目录，切回即可看到）；相对路径按工具根目录解析</p>
+  </div>
+  <div class="card">
+    <h3>DBC 报文库</h3>
+    <div class="form-row">
+      <input type="file" id="dbc-file" accept=".dbc,.arxml,.sym">
+      <button id="btn-dbc-load" class="primary">加载</button>
+      <button id="btn-dbc-unload">卸载</button>
+      <span id="dbc-status" class="hint"></span>
+    </div>
+    <div id="dbc-msgs" class="dbc-list"></div>
+  </div>
+</section>
+
+<!-- ================= 接收 ================= -->
+<section id="tab-rx" class="panel">
+  <div class="toolbar">
+    <input id="rx-filter" placeholder="过滤：多节点用空格/逗号分隔（任一命中显示）；可限定字段如 sa:00 sa:49 pgn:FECA data:FFFF">
+    <button id="btn-rx-rec" class="small">录制</button>
+    <button id="btn-rx-pause">锁定画面</button>
+  <button id="btn-rx-clear">清空</button>
+  <button id="btn-rx-export">导出当前显示</button>
+  <label>缓存</label><input id="rx-buffer-size" type="number" min="100" max="10000" step="100" value="800" size="5" title="实时接收缓存帧数">
+  <span class="hint" id="rx-count"></span>
+    <span class="hint" id="rx-mode"></span>
+    <button id="btn-rx-live" class="small" style="display:none">退出回看</button>
+  </div>
+  <div class="table-wrap">
+    <table id="rx-table">
+      <thead>
+        <tr><th>时间</th><th>方向</th><th>帧型</th><th>ID</th><th>PGN</th><th>SA</th><th>DA</th><th>优先级</th><th>DLC</th><th>数据</th><th>解析</th></tr>
+      </thead>
+      <tbody id="rx-body"></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h3>报文统计（当前连接）</h3>
+    <p class="hint">按帧 ID 统计次数和相邻帧间隔；断开重连后自动清零。</p>
+    <table class="list-table"><thead>
+      <tr><th>帧型</th><th>ID</th><th>次数</th><th>平均周期(ms)</th><th>最小(ms)</th><th>最大(ms)</th></tr>
+    </thead><tbody id="rx-stats-body"></tbody></table>
+  </div>
+</section>
+
+<!-- ================= 发送 ================= -->
+<section id="tab-tx" class="panel">
+  <div class="card">
+    <h3>手动发送</h3>
+    <div class="form-row">
+      <label>ID(hex)</label><input id="tx-id" value="0CF00400" size="12">
+      <label><input type="checkbox" id="tx-ext" checked> 扩展帧</label>
+      <button id="btn-tx-send" class="primary">发送</button>
+    </div>
+    <div class="form-row">
+      <label>数据(按字节)</label>
+      <div id="tx-bytes"></div>
+      <span class="hint">输满 2 位自动跳下一格；尾部留空 = 发短帧</span>
+    </div>
+  </div>
+  <div class="card">
+    <h3>周期发送任务</h3>
+    <div class="form-row">
+      <label>名称</label><input id="ps-name" value="任务1" size="10">
+      <label>ID(hex)</label><input id="ps-id" value="0CF00400" size="12">
+      <label>周期(ms)</label><input id="ps-period" value="100" size="6">
+      <label><input type="checkbox" id="ps-ext" checked> 扩展帧</label>
+      <label>模式</label>
+      <select id="ps-mode"><option value="fixed">固定</option><option value="increment">递增</option><option value="list">列表循环</option><option value="random">随机／掩码随机</option><option value="ramp">有界斜坡</option></select>
+      <label>递增字节(起~止)</label>
+      <input id="ps-byte" value="0" size="2"> ~ <input id="ps-byte-end" value="0" size="2">
+      <label>步长</label><input id="ps-step" value="1" size="3">
+      <button id="btn-ps-add" class="primary">添加并启动</button>
+    </div>
+    <div class="form-row">
+      <label>数据(按字节)</label>
+      <div id="ps-bytes"></div>
+    </div>
+    <div id="ps-generator" class="form-row"></div>
+    <table class="list-table"><thead>
+      <tr><th>名称</th><th>ID</th><th>帧型</th><th>数据(hex)</th><th>周期ms</th><th>模式</th><th>递增字节(起~止)/步长</th><th>状态</th><th>已发</th><th>操作</th></tr>
+    </thead><tbody id="ps-body"></tbody></table>
+    <p class="hint">表格内可直接改数据/周期/模式（保存后生效，运行中修改下一周期生效）；递增模式 = 指定字节按步长自增，用于模拟计数器或变化的数值</p>
+  </div>
+  <div class="card">
+    <h3>配置保存 / 读取（周期任务 + 故障模拟现场）</h3>
+    <div class="form-row">
+      <label>自定义路径</label>
+      <input id="preset-path" size="36" placeholder="完整文件路径，如 D:\现场\台架1.json">
+      <button id="btn-pick-save">浏览…</button>
+      <button id="btn-preset-save2" class="primary">保存到该文件</button>
+      <button id="btn-pick-open">选择文件…</button>
+      <button id="btn-preset-load2">读取该文件</button>
+    </div>
+    <div class="form-row">
+      <label>或存到配置目录</label>
+      <input id="preset-name" placeholder="配置名" size="14">
+      <button id="btn-preset-save">保存</button>
+      <select id="preset-select"></select>
+      <button id="btn-preset-load">读取</button>
+      <button id="btn-preset-del">删除</button>
+      <span class="hint">浏览 = 系统文件对话框（本机运行可用）；也可直接粘贴完整路径</span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 故障模拟 ================= -->
+<section id="tab-dm1" class="panel">
+  <div class="card">
+    <h3>故障报文（节点 → DTC → 多包传输 → 打包预览 → 发送）</h3>
+    <div class="form-row">
+      <label>节点 ID(hex)</label>
+      <select id="dm1-node"></select>
+      <input id="dm1-id" value="18FECA00" size="12" maxlength="8" placeholder="18FECA00" title="完整 29bit 仲裁 ID">
+      <span class="hint">下拉选模板或直接改 8 位 hex，各段含义见预览第一行</span>
+    </div>
+    <table class="list-table"><thead>
+      <tr><th>SPN</th><th>FMI</th><th>发生次数</th><th></th></tr>
+    </thead><tbody id="dtc-body"></tbody></table>
+    <div class="form-row">
+      <button id="btn-dtc-add">+ 添加 DTC</button>
+      <span class="hint">1 个 DTC → 单包直发；≥ 2 个 DTC → J1939 TP.BAM 多包</span>
+    </div>
+    <div class="form-row">
+      <label>多包 CM 节点 ID</label>
+      <input id="tp-cm-id" value="" size="11" maxlength="8" placeholder="18ECFF00" title="TP.CM 通告帧完整 29bit ID">
+      <label>DT 节点 ID</label>
+      <input id="tp-dt-id" value="" size="11" maxlength="8" placeholder="18EDFF00" title="TP.DT 数据帧完整 29bit ID">
+      <span class="hint">留空 = 自动跟随节点 ID（标准 TP：EC/ED + 优先级 + SA）</span>
+    </div>
+    <div class="form-row">
+      <label>MIL 灯</label><select id="lamp-mil"></select>
+      <label>红灯</label><select id="lamp-red"></select>
+      <label>黄灯</label><select id="lamp-amber"></select>
+      <label>保护灯</label><select id="lamp-protect"></select>
+      <label>周期(ms)</label><input id="dm1-period" value="1000" size="6">
+      <label><input type="checkbox" id="oc-inc"> OC 自动递增</label>
+      <span class="hint">勾选后每个广播周期 DTC 发生次数 +1，数据随时间变化</span>
+    </div>
+    <h4 class="ptitle">J1939 打包结果预览</h4>
+    <div class="preview-box" id="dm1-preview"></div>
+    <div class="form-row">
+      <button id="btn-dm1-once" class="primary">单次发送</button>
+      <button id="btn-dm1-start" class="danger">启动周期广播</button>
+      <button id="btn-dm1-stop">停止广播</button>
+      <span class="hint" id="dm1-state"></span>
+    </div>
+  </div>
+  <div class="card">
+    <h3>预置场景</h3>
+    <div class="form-row">
+      <select id="scn-select"></select>
+      <button id="btn-scn-apply" class="primary">加载场景</button>
+      <span class="hint" id="scn-desc"></span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 日志 ================= -->
+<section id="tab-log" class="panel">
+  <div class="card">
+    <h3>记录</h3>
+    <div class="form-row">
+      <label>格式</label>
+      <select id="log-format"><option value="csv">CSV（支持回放）</option><option value="asc">ASC</option></select>
+      <button id="btn-log-start" class="primary">开始记录</button>
+      <button id="btn-log-stop">停止记录</button>
+      <span class="hint" id="log-state"></span>
+    </div>
+  </div>
+  <div class="card">
+    <h3>打开任意路径的日志（回看）</h3>
+    <div class="form-row">
+      <input id="log-path" size="36" placeholder="完整 CSV 文件路径">
+      <button id="btn-log-pick">浏览…</button>
+      <button id="btn-log-view2">查看</button>
+      <span class="hint">加载到接收页离线分析，不限日志目录</span>
+    </div>
+  </div>
+  <div class="card">
+    <h3>日志文件</h3>
+    <div class="form-row">
+      <label>回放倍速</label><input id="replay-speed" type="number" min="0.01" step="0.1" value="1" size="4">
+      <button id="btn-replay-stop">停止回放</button>
+      <span class="hint" id="replay-state"></span>
+      <span class="hint">回放会按记录的时间间隔把帧重新发到总线</span>
+    </div>
+    <table class="list-table"><thead>
+      <tr><th>文件</th><th>大小</th><th>操作</th></tr>
+    </thead><tbody id="log-body"></tbody></table>
+  </div>
+</section>
+
+<!-- ================= 触发 ================= -->
+<section id="tab-trig" class="panel">
+  <div class="card">
+    <h3>新建触发规则</h3>
+    <div class="form-row">
+      <label>名称</label><input id="tr-name" size="10">
+      <label>ID(hex)</label><input id="tr-id" placeholder="18FECA00" size="11">
+      <label>PGN(十进制)</label><input id="tr-pgn" placeholder="65226" size="7">
+      <label>数据含(hex)</label><input id="tr-data" placeholder="FFFF" size="7">
+      <label>动作</label>
+      <select id="tr-action">
+        <option value="highlight">高亮显示</option>
+        <option value="count">计数</option>
+        <option value="send">自动发帧</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>数据条件(字节/位)</label>
+      <select id="tr-cond-type">
+        <option value="">无</option>
+        <option value="byte">单字节 比较值</option>
+        <option value="bytes">字节区间(小端) 比较</option>
+        <option value="bit">单个 bit = 0/1</option>
+        <option value="bits">位段(字节内) = 值</option>
+      </select>
+      <span id="tr-cond-inputs" class="form-row"></span>
+      <button id="btn-tr-cond-add" class="small">+ 添加条件</button>
+    </div>
+    <div id="tr-cond-list" class="hint"></div>
+    <div class="form-row">
+      <label>回应 ID(hex)</label><input id="tr-send-id" size="11">
+      <label><input type="checkbox" id="tr-send-ext" checked> 扩展帧</label>
+      <button id="btn-tr-add" class="primary">添加规则</button>
+    </div>
+    <div class="form-row">
+      <label>回应数据(按字节)</label>
+      <div id="tr-send-bytes"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>规则列表</h3>
+    <table class="list-table"><thead>
+      <tr><th>名称</th><th>匹配</th><th>动作</th><th>命中</th><th>启用</th><th>操作</th></tr>
+    </thead><tbody id="tr-body"></tbody></table>
+    <div class="form-row">
+      <button id="btn-tr-enable-all">全部启用</button>
+      <button id="btn-tr-disable-all">全部禁用</button>
+      <button id="btn-tr-reset-hits">清零命中计数</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>规则保存 / 读取</h3>
+    <div class="form-row">
+      <label>自定义路径</label>
+      <input id="trig-path" size="36" placeholder="完整文件路径，如 D:\现场\触发规则.json">
+      <button id="btn-trig-pick-save">浏览…</button>
+      <button id="btn-trig-save2" class="primary">保存到该文件</button>
+      <button id="btn-trig-pick-open">选择文件…</button>
+      <button id="btn-trig-load2">读取该文件</button>
+    </div>
+    <div class="form-row">
+      <label>或存到配置目录</label>
+      <input id="trig-name" placeholder="规则集名" size="14">
+      <button id="btn-trig-save">保存</button>
+      <select id="trig-preset-select"></select>
+      <button id="btn-trig-load">读取</button>
+      <button id="btn-trig-del">删除</button>
+      <span class="hint">读取 = 整体替换当前规则列表</span>
+    </div>
+  </div>
+</section>
+
+<div id="toast" class="toast"></div>
+<script src="app.js?v=generators-1"></script>
+</body>
+</html>

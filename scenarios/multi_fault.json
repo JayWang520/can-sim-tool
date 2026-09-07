@@ -1,0 +1,13 @@
+{
+  "name": "多故障并发（多包 BAM）",
+  "description": "SPN 110 水温过高 + SPN 100 机油压力低 + SPN 175 机油温度过高，3 个 DTC 触发 TP.BAM 多包传输",
+  "dtcs": [
+    { "spn": 110, "fmi": 0, "oc": 1 },
+    { "spn": 100, "fmi": 1, "oc": 2 },
+    { "spn": 175, "fmi": 0, "oc": 1 }
+  ],
+  "lamps": { "mil": "on", "red": "on", "amber": "on", "protect": "on" },
+  "sa": 0,
+  "priority": 6,
+  "period_ms": 1000
+}

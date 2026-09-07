@@ -1,0 +1,23 @@
+VERSION "demo engine J1939"
+
+NS_ :
+    NS_DESC_
+    CM_
+    BA_DEF_
+    BA_
+    VAL_
+
+BS_:
+
+BU_: ECU
+
+BO_ 2364539904 EEC1: 8 ECU
+ SG_ ActualEnginePercentTorque : 0|8@1+ (1,-125) [-125|125] "%" Vector__XXX
+ SG_ EngineSpeed : 8|16@1+ (0.125,0) [0|8031.875] "rpm" Vector__XXX
+
+BO_ 2566843904 ET1: 8 ECU
+ SG_ EngineCoolantTemperature : 0|8@1+ (1,-40) [-40|215] "degC" Vector__XXX
+
+CM_ SG_ 2364539904 EngineSpeed "SPN190 engine speed";
+CM_ SG_ 2364539904 ActualEnginePercentTorque "SPN513 actual engine percent torque";
+CM_ SG_ 2566843904 EngineCoolantTemperature "SPN110 engine coolant temperature";

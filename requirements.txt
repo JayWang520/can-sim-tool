@@ -1,0 +1,5 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-can>=4.3
+cantools>=39
+python-multipart>=0.0.9

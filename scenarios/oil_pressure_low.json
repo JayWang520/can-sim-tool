@@ -1,0 +1,9 @@
+{
+  "name": "机油压力低（单包）",
+  "description": "SPN 100 / FMI 1：发动机机油压力低于正常值，黄灯+保护灯常亮",
+  "dtcs": [{ "spn": 100, "fmi": 1, "oc": 1 }],
+  "lamps": { "mil": "off", "red": "off", "amber": "on", "protect": "on" },
+  "sa": 0,
+  "priority": 6,
+  "period_ms": 1000
+}
