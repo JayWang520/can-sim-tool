@@ -2,6 +2,8 @@
 
 Web 界面的 CAN 调试工具：同一套代码在 **Windows 与 Ubuntu（含虚拟机）** 上运行，支持多品牌 USB-CAN 硬件与无硬件虚拟总线，内置 J1939 发动机故障（DM1）模拟，单包/多包（TP.BAM）自动切换。
 
+> **v1.1.1（2026-09-17）**：新增离线文件分析、中英文界面切换与版本图标。详细更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 功能
 
 - **总线**：多后端运行时切换（virtual / socketcan / pcan / canalystii / slcan / kvaser），J1939 默认 250k
@@ -9,7 +11,9 @@ Web 界面的 CAN 调试工具：同一套代码在 **Windows 与 Ubuntu（含�
 - **发送**：手动单帧 + 周期任务表（可启停）；递增模式支持字节区间（小端 16/32 位计数器等）；**配置保存/读取**——全部周期任务与故障模拟配置整体存为命名文件，随时恢复
 - **故障模拟**：编辑 DTC 列表（SPN/FMI/OC）与故障灯状态，模拟发动机 ECU 周期广播 DM1（SAE 推荐 1s）；≤1 个 DTC 单包直发，≥2 个自动走 TP.BAM 多包；预置场景（水温过高/机油压力低/多故障并发）
 - **日志**：CSV / ASC 记录、查看、下载、删除、按原始时序回放（支持倍速）
-- **触发**：按 ID / PGN / 数据内容匹配 → 高亮 / 计数 / 自动回应帧；回应支持标准帧/扩展帧，命中计数可清零
+- **触发**：按 ID / PGN / 数据内容匹配 → 高亮 / 计数 / 自动回应帧；回应支持标准帧/扩展帧（含 `send_extended`），命中计数可清零
+- **离线文件分析**：打开 CSV/TSV/XLSX/JSON/ASC 日志离线统计（帧数、周期、数据变化、逐字节范围等），无需连接 CAN，结果可导出
+- **界面**：顶部切换中英文与深色/浅色/系统主题，偏好本地保存；显示当前版本号与应用图标
 
 ## 快速开始（一键）
 
@@ -75,7 +79,7 @@ sudo ip link set can0 up type can bitrate 250000
 2. **接收**：过滤框支持 ID/PGN 十六进制子串；黄色行 = 命中高亮触发规则
 3. **发送**：周期任务适合模拟周期报文（如 EEC1 转速）配合故障模拟使用
 4. **故障模拟**：填 DTC → 看预览（单包/多包、帧数）→ 启动广播；被调设备即收到周期 DM1
-5. **日志**：记录 → 下载 CSV 分析；回放会把帧按原时序重发（注意先停周期任务避免混淆）
+5. **日志**：记录 → 下载 CSV 分析；回放会把帧按原时序重发（注意先停周期任务避免混淆）。**打开文件与离线分析**：无需连接 CAN，选择 CSV/TSV/XLSX/JSON/ASC 文件 → 打开并分析，结果独立分页展示并可导出（详见 `docs/file-analysis.md`）
 6. **触发**：典型用法——`PGN 65226 + 高亮` 快速定位 DM1；`自动发帧` 可做请求-应答模拟
 
 ## J1939 实现说明
@@ -93,7 +97,7 @@ sudo ip link set can0 up type can bitrate 250000
 .venv/bin/python -m pytest tests/ -v            # Windows: .venv\Scripts\python -m pytest ...
 ```
 
-33 个测试覆盖：J1939 ID/DTC 编解码往返、DM1 单包与 BAM 组包、TP.BAM 接收重组、virtual 总线回环、周期发送、故障模拟引擎、DBC 解析（含跨 SA 的 PGN 兜底匹配）、CSV 记录回放、触发规则、日志保护、全 API + WebSocket 冒烟。
+59 个测试覆盖：J1939 ID/DTC 编解码往返、DM1 单包与 BAM 组包、TP.BAM 接收重组、virtual 总线回环、周期发送、故障模拟引擎、DBC 解析（含跨 SA 的 PGN 兜底匹配）、CSV 记录回放、触发规则、日志保护、离线文件分析、文件选择、触发器编辑、i18n 双语、版本图标、全 API + WebSocket 冒烟。
 
 Windows 打包：推荐在 PowerShell 中运行 `.\build.ps1`，脚本会生成目录版和便携 ZIP；如只需目录版可运行 `.\build.ps1 -NoArchive`。该脚本使用 PowerShell 原生文件操作，避免中文文件名导致的批处理编码问题。
 
@@ -101,10 +105,12 @@ Windows 打包：推荐在 PowerShell 中运行 `.\build.ps1`，脚本会生成�
 
 ```
 app/         后端（FastAPI + python-can + cantools）
-web/         前端单页（原生 HTML/JS/CSS，无构建）
+web/         前端单页（原生 HTML/JS/CSS，无构建：app.js/analysis.js/i18n.js/icon.*）
 scenarios/   预置故障场景 JSON（可自行复制修改）
 presets/     保存的配置现场（周期任务 + 故障配置）
 dbcs/        示例 DBC
-tests/       pytest 测试
+docs/        开发与功能文档（文件分析 / 前端工作区 / 版本与图标）
+scripts/     构建辅助脚本（如 build-icon.cjs）
+tests/       pytest 测试 + 前端 DOM/i18n CJS 检查
 logs/        运行时生成的日志
 ```

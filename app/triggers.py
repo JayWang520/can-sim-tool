@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 import can
@@ -52,7 +52,8 @@ class Rule:
     match_id: Optional[str] = None  # hex，如 "18FECA00"；留空表示不按 ID 匹配
     match_pgn: Optional[int] = None  # 按 PGN 十进制匹配（与 match_id 取或）
     data_contains: Optional[str] = None  # 数据包含该 hex 串
-    data_cond: list = field(default_factory=list)  # 字节/位条件列表，全部满足才触发（AND）
+    data_cond: list = field(default_factory=list)
+    data_cond_mode: str = "and"  # 字节/位条件之间的关系；旧规则默认 AND
     action: str = "highlight"  # highlight | count | send
     send_id: Optional[str] = None
     send_data: Optional[str] = None
@@ -66,6 +67,7 @@ class Rule:
             "id": self.id, "name": self.name,
             "match_id": self.match_id, "match_pgn": self.match_pgn,
             "data_contains": self.data_contains, "data_cond": self.data_cond,
+            "data_cond_mode": self.data_cond_mode,
             "action": self.action,
             "send_id": self.send_id, "send_data": self.send_data,
             "send_extended": self.send_extended,
@@ -88,11 +90,13 @@ class TriggerService:
 
     def update(self, rid: str, **kw) -> dict:
         rule = self._get(rid)
+        candidate = replace(rule)
         for k, v in kw.items():
-            if hasattr(rule, k) and k != "id":
-                setattr(rule, k, v)
-        self._validate(rule)
-        return rule.to_dict()
+            if k in Rule.__dataclass_fields__ and k not in {"id", "hits"}:
+                setattr(candidate, k, v)
+        self._validate(candidate)
+        self.rules[self.rules.index(rule)] = candidate
+        return candidate.to_dict()
 
     def remove(self, rid: str) -> None:
         self.rules = [r for r in self.rules if r.id != rid]
@@ -122,6 +126,8 @@ class TriggerService:
 
     @staticmethod
     def _validate(rule: Rule) -> None:
+        if rule.data_cond_mode not in ("and", "or"):
+            raise ValueError("data_cond_mode 须为 and 或 or")
         if rule.match_id:
             if not _HEX_RE.match(rule.match_id):
                 raise ValueError("match_id 必须是 hex 字符串")
@@ -198,7 +204,8 @@ class TriggerService:
                     continue
             if rule.data_contains and rule.data_contains.lower() not in data_hex:
                 continue
-            if rule.data_cond and not all(_check_cond(c, data) for c in rule.data_cond):
+            combine = any if rule.data_cond_mode == "or" else all
+            if rule.data_cond and not combine(_check_cond(c, data) for c in rule.data_cond):
                 continue
             rule.hits += 1
             item = {"rule_id": rule.id, "name": rule.name, "action": rule.action}

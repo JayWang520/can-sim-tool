@@ -12,14 +12,16 @@ from pathlib import Path
 
 import can as pycan
 
-from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, Form
+from starlette.concurrency import run_in_threadpool
+from .file_analysis import analyze_file, MAX_BYTES
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import j1939
 from . import logger as _logger_mod
 from .bus import INTERFACES, BusService
-from .build_info import frontend_version
+from .build_info import APP_VERSION, frontend_version
 from .decoder import DbcService
 from .dm1_sim import Dm1Sim
 from .logger import CanLogger, Replayer
@@ -41,7 +43,12 @@ DEFAULT_PRESET_DIR = ROOT / "presets"
 SETTINGS_FILE = ROOT / "settings.json"
 FRONTEND_VERSION = frontend_version(RESOURCE_DIR)
 
-app = FastAPI(title="CAN Sim Tool", version="1.0")
+app = FastAPI(title="CAN Sim Tool", version=APP_VERSION)
+
+
+@app.get("/api/version")
+async def get_version():
+    return {"version": APP_VERSION, "frontend_version": FRONTEND_VERSION}
 
 
 @app.middleware("http")
@@ -290,6 +297,7 @@ async def status():
     return {
         **bus.info(),
         "frontend_version": FRONTEND_VERSION,
+        "version": APP_VERSION,
         "dm1": dm1.status(),
         "replay": replayer.status(),
         "recording": logger.recording,
@@ -605,8 +613,10 @@ async def add_trigger(body: dict):
 @app.put("/api/triggers/{rid}")
 async def update_trigger(rid: str, body: dict):
     try:
+        if "send_extended" in body:
+            body = {**body, "send_extended": _parse_bool(body["send_extended"])}
         return triggers.update(rid, **body)
-    except (ValueError, KeyError) as e:
+    except (ValueError, KeyError, TypeError) as e:
         raise HTTPException(400, str(e))
 
 
@@ -760,6 +770,8 @@ async def load_preset_from(body: dict):
 @app.get("/api/filepicker")
 async def file_picker(mode: str = "open", ext: str = "json"):
     """弹出系统文件对话框（本机运行时可用），返回选择的完整路径。"""
+    if mode not in {"open", "save", "directory"}:
+        raise HTTPException(400, "无效的文件选择模式")
     types = {"json": [("JSON 文件", "*.json"), ("所有文件", "*.*")],
              "csv": [("CSV 日志", "*.csv"), ("所有文件", "*.*")],
              "dbc": [("DBC 文件", "*.dbc"), ("所有文件", "*.*")]}.get(ext, [("所有文件", "*.*")])
@@ -772,10 +784,12 @@ async def file_picker(mode: str = "open", ext: str = "json"):
         root.withdraw()
         root.attributes("-topmost", True)
         try:
+            if mode == "directory":
+                return filedialog.askdirectory(parent=root, title="选择保存文件夹", mustexist=True)
             if mode == "save":
                 return filedialog.asksaveasfilename(
-                    defaultextension=f".{ext}", filetypes=types, title="保存文件")
-            return filedialog.askopenfilename(filetypes=types, title="选择文件")
+                    parent=root, defaultextension=f".{ext}", filetypes=types, title="保存文件", confirmoverwrite=True)
+            return filedialog.askopenfilename(parent=root, filetypes=types, title="选择文件")
         finally:
             root.destroy()
 
@@ -916,4 +930,15 @@ async def ws_endpoint(ws: WebSocket):
 
 
 # ------------------------------------------------------------------ 静态页
+@app.post('/api/files/analyze')
+async def analyze_upload(file: UploadFile, sheet: str = Form(''), id_base: int = Form(16), time_unit: str = Form('s')):
+    try:
+        content = await file.read(MAX_BYTES + 1)
+        return await run_in_threadpool(analyze_file, file.filename or '', content, sheet, id_base, time_unit)
+    except Exception as exc:
+        raise HTTPException(400, f'无法分析文件：{exc}') from exc
+    finally:
+        await file.close()
+
+
 app.mount("/", StaticFiles(directory=RESOURCE_DIR / "web", html=True), name="web")

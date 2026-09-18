@@ -2,9 +2,16 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+$("theme-select").value = window.getCanTheme();
+$("theme-select").addEventListener("change", e => window.setCanTheme(e.target.value));
+fetch("/api/version").then(r => {
+  if (!r.ok) throw new Error("Version unavailable");
+  return r.json();
+}).then(info => { $("app-version").textContent = `v${info.version}`; }).catch(() => { $("app-version").textContent = "v?"; });
 const LAMP_OPTS = [["off", "灭"], ["on", "亮"], ["blink", "闪烁"], ["na", "不可用"]];
 
 // ---------------------------------------------------------------- utils
+// Bilingual workspace revision 1 (also invalidates packaged launch identity).
 function toast(msg, isError = false) {
   const el = $("toast");
   el.textContent = msg;
@@ -85,19 +92,26 @@ function insertByteSequence(inp, text) {
   for (const char of chars) inp = insertByteText(inp, char);
 }
 document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
   if (!e.target.matches(".byte-editor input") || !/^[0-9a-fA-F]$/.test(e.key)) return;
   // 一次物理按键只写一个字符；阻止后续 beforeinput/input 再次重复写入。
   e.preventDefault();
   if (e.repeat) return;
   // 部分浏览器在 preventDefault 后仍派发 beforeinput，用标记避免同一按键处理两次。
   e.target._byteKeyHandled = true;
-  setTimeout(() => { e.target._byteKeyHandled = false; }, 0);
+  const editor = e.target.closest(".byte-editor");
+  editor._byteKeyHandled = true;
+  setTimeout(() => {
+    e.target._byteKeyHandled = false;
+    editor._byteKeyHandled = false;
+  }, 0);
   insertByteSequence(e.target, e.key);
 });
 document.addEventListener("beforeinput", (e) => {
   if (!e.target.matches(".byte-editor input") || !e.inputType.startsWith("insert")) return;
   e.preventDefault();
   if (e.target._byteKeyHandled) return;
+  if (e.target.closest(".byte-editor")._byteKeyHandled) return;
   insertByteSequence(e.target, e.data || "");
 });
 document.addEventListener("paste", (e) => {
@@ -126,11 +140,27 @@ function byteInputsHtml(hex) {
 
 // ---------------------------------------------------------------- tabs
 document.querySelectorAll(".tab").forEach((btn) => {
+  btn.setAttribute("role", "tab");
+  btn.id = `nav-${btn.dataset.tab}`;
+  btn.setAttribute("aria-controls", btn.dataset.tab);
+  $(btn.dataset.tab).setAttribute("role", "tabpanel");
+  $(btn.dataset.tab).setAttribute("aria-labelledby", btn.id);
+  btn.setAttribute("aria-selected", String(btn.classList.contains("active")));
   btn.onclick = () => {
     document.querySelectorAll(".tab,.panel").forEach((el) => el.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(el => el.setAttribute("aria-selected", "false"));
     btn.classList.add("active");
+    btn.setAttribute("aria-selected", "true");
     $(btn.dataset.tab).classList.add("active");
   };
+  btn.addEventListener("keydown", event => {
+    if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = [...document.querySelectorAll(".tab")];
+    const delta = ["ArrowDown", "ArrowRight"].includes(event.key) ? 1 : -1;
+    const index = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (tabs.indexOf(btn) + delta + tabs.length) % tabs.length;
+    tabs[index].focus(); tabs[index].click();
+  });
 });
 
 // ---------------------------------------------------------------- 总线
@@ -330,7 +360,7 @@ function renderFrames() {
     const dec = decodedText(f);
     return `<tr${hl}><td>${(f.ts || 0).toFixed(3)}</td>` +
       `<td class="dir-${f.dir}">${f.dir.toUpperCase()}</td>` +
-      `<td>${f.ext ? "扩展" : "标准"}</td>` +
+      `<td data-frame-type="${f.ext ? 'extended' : 'standard'}">${window.canI18n?.text(f.ext ? "扩展" : "标准") || (f.ext ? "扩展" : "标准")}</td>` +
       `<td>${f.id}</td><td>${f.pgn ?? "-"}</td><td>${f.sa ?? "-"}</td>` +
       `<td>${f.da ?? "-"}</td><td>${f.prio ?? "-"}</td><td>${f.dlc}</td>` +
       `<td>${hexGroup(f.data)}</td>` +
@@ -460,7 +490,7 @@ async function refreshSenders() {
       `<td><input class="e-byte" value="${s.inc_byte ?? 0}" size="2" ${inc ? "" : "disabled"}>~` +
       `<input class="e-byte-end" value="${s.inc_end ?? s.inc_byte ?? 0}" size="2" ${inc ? "" : "disabled"}>` +
       ` / <input class="e-step" value="${s.inc_step ?? 1}" size="3" ${inc ? "" : "disabled"}></td>` +
-      `<td>${s.running ? "运行中" : s.error ? `<span class="err" title="${esc(s.error)}">发送失败</span>` : "停止"}</td><td>${s.sent}</td>` +
+      `<td data-ui>${s.running ? "运行中" : s.error ? `<span class="err" title="${esc(s.error)}">发送失败</span>` : "停止"}</td><td>${s.sent}</td>` +
       `<td><button class="small primary" onclick="psSave('${s.id}')">保存</button>` +
       ` <button class="small" onclick="psToggle('${s.id}', ${s.running ? 0 : 1})">${s.running ? "停止" : "启动"}</button>` +
       ` <button class="small" onclick="psDup('${s.id}')">复制</button>` +
@@ -565,7 +595,7 @@ async function refreshFrameStatistics() {
   if (offlineView) return;
   const rows = await api("/api/stats/frames");
   $("rx-stats-body").innerHTML = rows.map((s) =>
-    `<tr><td>${s.extended ? "扩展" : "标准"}</td><td>${s.id}</td><td>${s.count}</td>` +
+    `<tr><td data-ui>${s.extended ? "扩展" : "标准"}</td><td>${s.id}</td><td>${s.count}</td>` +
     `<td>${s.avg_period_ms == null ? "-" : s.avg_period_ms}</td>` +
     `<td>${s.min_period_ms == null ? "-" : s.min_period_ms}</td>` +
     `<td>${s.max_period_ms == null ? "-" : s.max_period_ms}</td></tr>`
@@ -704,10 +734,13 @@ async function refreshPresets() {
 async function pickFile(mode, ext, intoId) {
   const r = await api(`/api/filepicker?mode=${mode}&ext=${ext}`);
   if (r.path) $(intoId).value = r.path;
+  return r.path || null;
 }
 
 $("btn-preset-save2").onclick = async () => {
-  const r = await api("/api/presets/save_to", "POST", { path: $("preset-path").value.trim() });
+  const path = await pickFile("save", "json", "preset-path");
+  if (!path) return;
+  const r = await api("/api/presets/save_to", "POST", { path });
   toast(`已保存到 ${r.path}（${r.tasks} 任务 + 故障配置）`);
 };
 $("btn-preset-load2").onclick = async () => {
@@ -717,7 +750,7 @@ $("btn-preset-load2").onclick = async () => {
   refreshSenders();
   toast(`已从文件恢复 ${r.tasks} 个任务 + 故障配置`);
 };
-$("btn-pick-save").onclick = () => pickFile("save", "json", "preset-path");
+$("btn-pick-save").onclick = $("btn-preset-save2").onclick;
 $("btn-pick-open").onclick = () => pickFile("open", "json", "preset-path");
 $("btn-log-pick").onclick = () => pickFile("open", "csv", "log-path");
 $("btn-log-view2").onclick = async () => {
@@ -800,7 +833,7 @@ window.logView = async (name) => {
   enterOfflineView(r.file, r.frames, r.count);
 };
 window.logDelete = async (name) => {
-  if (!confirm(`确定删除日志“${name}”吗？`)) return;
+  if (!confirm(window.canI18n?.text(`确定删除日志“${name}”吗？`, `Delete log “${name}”?`) || `确定删除日志“${name}”吗？`)) return;
   await api(`/api/log/${encodeURIComponent(name)}`, "DELETE");
   toast(`已删除日志：${name}`);
   refreshLogs();
@@ -827,6 +860,58 @@ setInterval(async () => {
 // ---------------------------------------------------------------- 触发
 // 数据条件编辑（字节/字节区间/单bit/位段，多条件 AND）
 let trConds = [];
+let trCondEditingIndex = null;
+function resetConditionEditor() {
+  trCondEditingIndex = null;
+  $("tr-cond-type").value = "";
+  $("btn-tr-cond-add").textContent = "+ 添加条件";
+  $("btn-tr-cond-cancel").hidden = true;
+  renderCondInputs();
+}
+let trEditingId = null;
+let trRules = [];
+function resetTriggerEditor() {
+  resetConditionEditor();
+  $("tr-cond-mode").value = "and";
+  trEditingId = null;
+  ["tr-name", "tr-id", "tr-pgn", "tr-data", "tr-send-id"].forEach(id => { $(id).value = ""; });
+  $("tr-action").value = "highlight";
+  $("tr-send-ext").checked = true;
+  $("tr-cond-type").value = "";
+  renderCondInputs();
+  renderByteEditor($("tr-send-bytes"));
+  trConds = [];
+  renderCondList();
+  $("tr-editor-title").textContent = "新建触发规则";
+  $("btn-tr-add").textContent = "添加规则";
+  $("btn-tr-cancel").hidden = true;
+}
+window.trEdit = (id) => {
+  const rule = trRules.find(r => r.id === id);
+  if (!rule) return toast("规则已不存在，请刷新后重试", true);
+  resetConditionEditor();
+  $("tr-cond-mode").value = rule.data_cond_mode || "and";
+  trEditingId = id;
+  $("tr-name").value = rule.name;
+  $("tr-id").value = rule.match_id ?? "";
+  $("tr-pgn").value = rule.match_pgn ?? "";
+  $("tr-data").value = rule.data_contains ?? "";
+  $("tr-action").value = rule.action;
+  $("tr-send-id").value = rule.send_id ?? "";
+  $("tr-send-ext").checked = rule.send_extended;
+  renderByteEditor($("tr-send-bytes"));
+  const bytes = (rule.send_data || "").replace(/\s/g, "").match(/../g) || [];
+  $("tr-send-bytes").querySelectorAll("input").forEach((el, i) => { el.value = bytes[i] || ""; });
+  trConds = (rule.data_cond || []).map(c => ({ ...c }));
+  $("tr-cond-type").value = "";
+  renderCondInputs();
+  renderCondList();
+  $("tr-editor-title").textContent = "修改触发规则";
+  $("btn-tr-add").textContent = "保存修改";
+  $("btn-tr-cancel").hidden = false;
+  $("tr-name").focus();
+};
+$("btn-tr-cancel").onclick = resetTriggerEditor;
 const COND_OPS = ["==", "!=", ">", "<", ">=", "<="];
 function renderCondInputs() {
   const t = $("tr-cond-type").value;
@@ -851,11 +936,34 @@ function condText(c) {
 }
 function renderCondList() {
   $("tr-cond-list").innerHTML = trConds.length
-    ? "已加条件（多条件为 AND）：" + trConds.map((c, i) =>
-        `[${condText(c)} <a href="javascript:void(0)" onclick="trCondDel(${i})">删</a>]`).join(" ")
+    ? `已加条件（${$("tr-cond-mode").value === "or" ? "OR 任一满足" : "AND 全部满足"}；字节序号从 0 开始）：` + trConds.map((c, i) =>
+        `<span>[${esc(condText(c))} <button class="small" onclick="trCondEdit(${i})">编辑</button> <button class="small" onclick="trCondDel(${i})">删除</button>]</span>`).join(" ")
     : "";
 }
-window.trCondDel = (i) => { trConds.splice(i, 1); renderCondList(); };
+$("tr-cond-mode").onchange = renderCondList;
+$("btn-tr-cond-cancel").onclick = resetConditionEditor;
+window.trCondEdit = (i) => {
+  const c = trConds[i];
+  if (!c) return;
+  trCondEditingIndex = i;
+  $("tr-cond-type").value = c.type;
+  renderCondInputs();
+  const set = (id, value) => { $(id).value = String(value); };
+  if (c.type === "byte" || c.type === "bit") set("tc-i", c.index ?? c.bit);
+  if (c.type === "bytes" || c.type === "bits") { set("tc-s", c.start); set("tc-e", c.end); }
+  if (c.type === "bits") set("tc-b", c.byte);
+  if (c.type === "byte" || c.type === "bytes") set("tc-op", c.op || "==");
+  set("tc-v", c.type === "byte" || c.type === "bytes" ? Number(c.value).toString(16).toUpperCase() : c.value);
+  $("btn-tr-cond-add").textContent = "保存条件修改";
+  $("btn-tr-cond-cancel").hidden = false;
+  $("tc-v").focus();
+};
+window.trCondDel = (i) => {
+  trConds.splice(i, 1);
+  if (trCondEditingIndex === i) resetConditionEditor();
+  else if (trCondEditingIndex !== null && trCondEditingIndex > i) trCondEditingIndex--;
+  renderCondList();
+};
 $("btn-tr-cond-add").onclick = () => {
   const t = $("tr-cond-type").value;
   if (!t) return toast("先选择条件类型", true);
@@ -865,32 +973,43 @@ $("btn-tr-cond-add").onclick = () => {
   else if (t === "bytes") c = { type: "bytes", start: parseInt($("tc-s").value), end: parseInt($("tc-e").value), op: $("tc-op").value, value: hx("tc-v") };
   else if (t === "bit") c = { type: "bit", index: parseInt($("tc-i").value), value: parseInt($("tc-v").value) };
   else c = { type: "bits", byte: parseInt($("tc-b").value), start: parseInt($("tc-s").value), end: parseInt($("tc-e").value), value: hx("tc-v") };
-  trConds.push(c);
+  if (Object.values(c).some(v => typeof v === "number" && !Number.isFinite(v))) return toast("条件数值不能为空或无效", true);
+  if (trCondEditingIndex === null) trConds.push(c);
+  else trConds[trCondEditingIndex] = c;
+  resetConditionEditor();
   renderCondList();
 };
 
 $("btn-tr-add").onclick = async () => {
+  if (trCondEditingIndex !== null) return toast("请先保存或取消当前条件修改", true);
   const body = { name: $("tr-name").value || "规则" };
-  if ($("tr-id").value.trim()) body.match_id = $("tr-id").value.trim();
-  if ($("tr-pgn").value.trim()) body.match_pgn = parseInt($("tr-pgn").value);
-  if ($("tr-data").value.trim()) body.data_contains = $("tr-data").value.replace(/\s/g, "");
-  if (trConds.length) body.data_cond = trConds;
+  body.match_id = $("tr-id").value.trim() || null;
+  body.match_pgn = $("tr-pgn").value.trim() ? Number($("tr-pgn").value) : null;
+  body.data_contains = $("tr-data").value.replace(/\s/g, "") || null;
+  body.data_cond = trConds;
+  body.data_cond_mode = $("tr-cond-mode").value || "and";
   body.action = $("tr-action").value;
   if (body.action === "send") {
     body.send_id = $("tr-send-id").value.trim();
-    body.send_data = getByteHex($("tr-send-bytes")) || "00";
+    body.send_data = getByteHex($("tr-send-bytes"));
     body.send_extended = $("tr-send-ext").checked;
   }
-  await api("/api/triggers", "POST", body);
-  trConds = [];
-  renderCondList();
-  refreshTriggers();
+  $("btn-tr-add").disabled = true;
+  try {
+    await api(trEditingId ? `/api/triggers/${trEditingId}` : "/api/triggers", trEditingId ? "PUT" : "POST", body);
+    toast(trEditingId ? "规则已修改" : "规则已添加");
+    resetTriggerEditor();
+    await refreshTriggers();
+  } finally {
+    $("btn-tr-add").disabled = false;
+  }
 };
 
 async function refreshTriggers() {
   const rules = await api("/api/triggers");
+  trRules = rules;
   $("tr-body").innerHTML = rules.map((r) => {
-    const conds = (r.data_cond || []).map(condText).join(" 且 ");
+    const conds = (r.data_cond || []).map(condText).join(r.data_cond_mode === "or" ? " 或 " : " 且 ");
     const match = [
       r.match_id ? `ID ${r.match_id}` : "",
       r.match_pgn ? `PGN ${r.match_pgn}` : "",
@@ -898,14 +1017,15 @@ async function refreshTriggers() {
       conds ? `条件 ${conds}` : "",
     ].filter(Boolean).join(" + ") || "无匹配条件";
     const action = r.action === "send" ? `发${r.send_extended ? "扩展" : "标准"}帧 ${r.send_id || ""} ${hexGroup(r.send_data || "")}` : r.action === "count" ? "计数" : "高亮";
-    return `<tr><td>${esc(r.name)}</td><td>${match}</td><td>${action}</td><td>${r.hits}</td>` +
-      `<td>${r.enabled ? "是" : "否"}</td>` +
-      `<td><button class="small" onclick="trToggle('${r.id}', ${r.enabled ? 0 : 1})">${r.enabled ? "禁用" : "启用"}</button>` +
+    return `<tr><td>${esc(r.name)}</td><td data-ui>${match}</td><td data-ui>${action}</td><td>${r.hits}</td>` +
+      `<td data-ui>${r.enabled ? "是" : "否"}</td>` +
+      `<td><button class="small primary" onclick="trEdit('${r.id}')">编辑</button>` +
+      ` <button class="small" onclick="trToggle('${r.id}', ${r.enabled ? 0 : 1})">${r.enabled ? "禁用" : "启用"}</button>` +
       ` <button class="small" onclick="trDel('${r.id}')">删除</button></td></tr>`;
   }).join("") || '<tr><td colspan="6" class="hint">暂无规则</td></tr>';
 }
 window.trToggle = async (id, en) => { await api(`/api/triggers/${id}`, "PUT", { enabled: !!en }); refreshTriggers(); };
-window.trDel = async (id) => { await api(`/api/triggers/${id}`, "DELETE"); refreshTriggers(); };
+window.trDel = async (id) => { await api(`/api/triggers/${id}`, "DELETE"); if (trEditingId === id) resetTriggerEditor(); refreshTriggers(); };
 async function setAllTriggersEnabled(enabled) {
   await api("/api/triggers/set_enabled", "POST", { enabled });
   refreshTriggers();
@@ -948,7 +1068,9 @@ $("btn-trig-del").onclick = async () => {
   refreshTrigPresets();
 };
 $("btn-trig-save2").onclick = async () => {
-  const r = await api("/api/triggers/save_to", "POST", { path: $("trig-path").value.trim() });
+  const path = await pickFile("save", "json", "trig-path");
+  if (!path) return;
+  const r = await api("/api/triggers/save_to", "POST", { path });
   toast(`已保存到 ${r.path}（${r.rules} 条规则）`);
 };
 $("btn-trig-load2").onclick = async () => {
@@ -956,10 +1078,12 @@ $("btn-trig-load2").onclick = async () => {
   refreshTriggers();
   toast(`已从文件恢复 ${r.rules} 条规则`);
 };
-$("btn-trig-pick-save").onclick = () => pickFile("save", "json", "trig-path");
+$("btn-trig-pick-save").onclick = $("btn-trig-save2").onclick;
 $("btn-trig-pick-open").onclick = () => pickFile("open", "json", "trig-path");
 
 // ---------------------------------------------------------------- 文件路径设置
+$("btn-pick-logs-dir").onclick = () => pickFile("directory", "", "set-logs");
+$("btn-pick-presets-dir").onclick = () => pickFile("directory", "", "set-presets");
 async function loadSettings() {
   const s = await api("/api/settings");
   $("set-logs").value = s.logs_dir;

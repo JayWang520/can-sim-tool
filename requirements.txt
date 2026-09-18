@@ -3,3 +3,4 @@ uvicorn[standard]>=0.29
 python-can>=4.3
 cantools>=39
 python-multipart>=0.0.9
+openpyxl>=3.1

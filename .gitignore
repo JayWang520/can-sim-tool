@@ -1,9 +1,9 @@
 # Python
 __pycache__/
 *.py[cod]
-.venv/
-venv/
+.venv*/
 .pytest_cache/
+venv/
 
 # 打包产物
 build/
@@ -21,3 +21,5 @@ dbcs/uploads/
 # 本地临时
 *.log
 *.tmp
+# 损坏的临时备份（勿提交）
+*.corrupt-*.bak

@@ -4,16 +4,45 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CAN 模拟收发工具</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="alternate icon" type="image/x-icon" href="icon.ico">
+<script>
+(() => {
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  let preference = "dark";
+  try { preference = localStorage.getItem("can-sim-theme") || "dark"; } catch (_) {}
+  if (!["light", "dark", "system"].includes(preference)) preference = "dark";
+  function apply() {
+    document.documentElement.dataset.theme = preference === "system" ? (media.matches ? "dark" : "light") : preference;
+  }
+  window.setCanTheme = value => {
+    if (!["light", "dark", "system"].includes(value)) return;
+    preference = value;
+    apply();
+    try { localStorage.setItem("can-sim-theme", value); } catch (_) {}
+  };
+  window.getCanTheme = () => preference;
+  media.addEventListener("change", apply);
+  apply();
+})();
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
-  <h1>CAN 模拟收发工具 <span class="sub">J1939</span></h1>
+  <h1><img class="app-icon" src="icon.svg" alt="" width="32" height="32"> CAN 模拟收发工具 <span class="sub">J1939</span></h1>
+  <span id="app-version" class="app-version" aria-label="版本">…</span>
   <div id="conn-badge" class="badge off">未连接</div>
   <div id="stats" class="stats"></div>
+  <label class="theme-control" for="theme-select">主题
+    <select id="theme-select"><option value="dark">深色</option><option value="light">浅色</option><option value="system">跟随系统</option></select>
+  </label>
+  <label class="theme-control" for="language-select">语言
+    <select id="language-select"><option value="zh-CN">中文</option><option value="en">English</option></select>
+  </label>
 </header>
 
-<nav>
+<nav aria-label="主导航" role="tablist">
   <button class="tab active" data-tab="tab-bus">总线</button>
   <button class="tab" data-tab="tab-rx">接收</button>
   <button class="tab" data-tab="tab-tx">发送</button>
@@ -42,12 +71,12 @@
   <div class="card">
     <h3>文件保存路径（重启后仍生效）</h3>
     <div class="form-row">
-      <label>日志目录</label><input id="set-logs" size="32" placeholder="如 D:\can\logs 或 /home/user/can/logs">
-      <label>配置目录</label><input id="set-presets" size="32" placeholder="保存的周期任务/故障现场">
+      <label>日志目录</label><input id="set-logs" size="32" readonly><button id="btn-pick-logs-dir">选择文件夹…</button>
+      <label>配置目录</label><input id="set-presets" size="32" readonly><button id="btn-pick-presets-dir">选择文件夹…</button>
       <button id="btn-settings" class="primary">应用</button>
       <button id="btn-settings-reset">恢复默认</button>
     </div>
-    <p class="hint">改为自定义路径后，日志和配置现场都存到新目录（旧文件留在原目录，切回即可看到）；相对路径按工具根目录解析</p>
+    <p class="hint">点击“选择文件夹”后点“应用”。日志和配置存到新目录；旧文件保留在原目录。取消选择不改变路径。</p>
   </div>
   <div class="card">
     <h3>DBC 报文库</h3>
@@ -134,20 +163,20 @@
     <h3>配置保存 / 读取（周期任务 + 故障模拟现场）</h3>
     <div class="form-row">
       <label>自定义路径</label>
-      <input id="preset-path" size="36" placeholder="完整文件路径，如 D:\现场\台架1.json">
-      <button id="btn-pick-save">浏览…</button>
-      <button id="btn-preset-save2" class="primary">保存到该文件</button>
+      <input id="preset-path" size="36" readonly placeholder="通过系统对话框选择文件">
+      <button id="btn-pick-save" hidden>另存为…</button>
+      <button id="btn-preset-save2" class="primary">另存为…</button>
       <button id="btn-pick-open">选择文件…</button>
       <button id="btn-preset-load2">读取该文件</button>
     </div>
     <div class="form-row">
       <label>或存到配置目录</label>
       <input id="preset-name" placeholder="配置名" size="14">
-      <button id="btn-preset-save">保存</button>
+      <button id="btn-preset-save">保存到配置目录</button>
       <select id="preset-select"></select>
       <button id="btn-preset-load">读取</button>
       <button id="btn-preset-del">删除</button>
-      <span class="hint">浏览 = 系统文件对话框（本机运行可用）；也可直接粘贴完整路径</span>
+      <span class="hint">另存为：弹出系统窗口选择目录和文件名（本机运行可用）</span>
     </div>
   </div>
 </section>
@@ -207,6 +236,26 @@
 <!-- ================= 日志 ================= -->
 <section id="tab-log" class="panel">
   <div class="card">
+    <h3>打开文件与离线分析</h3>
+    <div class="form-row">
+      <input id="analysis-file" type="file" accept=".csv,.tsv,.xlsx,.json,.asc">
+      <label>工作表（空=第一张） <input id="analysis-sheet" size="12"></label>
+      <label>ID 进制 <select id="analysis-base"><option value="16">十六进制</option><option value="10">十进制</option></select></label>
+      <label>时间单位 <select id="analysis-unit"><option>s</option><option>ms</option><option>us</option></select></label>
+      <button id="analysis-open" class="primary">打开并分析</button>
+      <button id="analysis-export" disabled>导出 JSON 分析报告</button>
+    </div>
+    <p class="hint">CSV / TSV / XLSX / JSON：必需列 ts、id、data；可选 extended、dir、dlc、channel。data 为十六进制文本，默认 RX；未指定帧类型时按 ID 范围推断（低 ID 扩展帧须填写 extended=1）。Excel 不执行公式，请先转成值。ASC 支持经典 CAN 数据帧、hex/absolute。上限 20 MiB / 10 万行。不发送报文，不修改原文件。</p>
+    <p id="analysis-status" role="status">请选择文件。</p>
+    <div class="form-row"><label>报文分组 <select id="analysis-group"><option value="">全部</option></select></label></div>
+    <div style="overflow:auto;max-height:300px"><table class="list-table"><thead><tr><th>通道 / ID / 类型 / 方向</th><th>帧数</th><th>周期均值 ms</th><th>最小 ms</th><th>最大 ms</th><th>数据变化次数</th><th>时间倒退次数</th></tr></thead><tbody id="analysis-stats"></tbody></table></div>
+    <p class="hint">周期按同通道、ID、帧类型、方向的文件顺序计算；负间隔计入时间倒退，不参与周期统计。变化次数是相邻有效报文的比较，不代表故障判定。</p>
+    <div id="analysis-bytes"></div>
+    <div class="form-row"><button id="analysis-prev">上一页</button><span id="analysis-page"></span><button id="analysis-next">下一页</button></div>
+    <div style="overflow:auto"><table class="list-table"><thead><tr><th>原始行</th><th>时间 s</th><th>通道</th><th>ID</th><th>类型</th><th>方向</th><th>DLC</th><th>数据</th></tr></thead><tbody id="analysis-frames"></tbody></table></div>
+    <details><summary>无效记录（不参与统计）</summary><pre id="analysis-errors" style="max-height:240px;overflow:auto;white-space:pre-wrap"></pre></details>
+  </div>
+  <div class="card">
     <h3>记录</h3>
     <div class="form-row">
       <label>格式</label>
@@ -242,7 +291,7 @@
 <!-- ================= 触发 ================= -->
 <section id="tab-trig" class="panel">
   <div class="card">
-    <h3>新建触发规则</h3>
+    <h3 id="tr-editor-title">新建触发规则</h3>
     <div class="form-row">
       <label>名称</label><input id="tr-name" size="10">
       <label>ID(hex)</label><input id="tr-id" placeholder="18FECA00" size="11">
@@ -257,6 +306,7 @@
     </div>
     <div class="form-row">
       <label>数据条件(字节/位)</label>
+      <select id="tr-cond-mode" aria-label="多条件关系"><option value="and">全部满足 AND</option><option value="or">任一满足 OR</option></select>
       <select id="tr-cond-type">
         <option value="">无</option>
         <option value="byte">单字节 比较值</option>
@@ -266,12 +316,14 @@
       </select>
       <span id="tr-cond-inputs" class="form-row"></span>
       <button id="btn-tr-cond-add" class="small">+ 添加条件</button>
+      <button id="btn-tr-cond-cancel" class="small" hidden>取消条件修改</button>
     </div>
     <div id="tr-cond-list" class="hint"></div>
     <div class="form-row">
       <label>回应 ID(hex)</label><input id="tr-send-id" size="11">
       <label><input type="checkbox" id="tr-send-ext" checked> 扩展帧</label>
       <button id="btn-tr-add" class="primary">添加规则</button>
+      <button id="btn-tr-cancel" hidden>取消修改</button>
     </div>
     <div class="form-row">
       <label>回应数据(按字节)</label>
@@ -293,16 +345,16 @@
     <h3>规则保存 / 读取</h3>
     <div class="form-row">
       <label>自定义路径</label>
-      <input id="trig-path" size="36" placeholder="完整文件路径，如 D:\现场\触发规则.json">
-      <button id="btn-trig-pick-save">浏览…</button>
-      <button id="btn-trig-save2" class="primary">保存到该文件</button>
+      <input id="trig-path" size="36" readonly placeholder="通过系统对话框选择文件">
+      <button id="btn-trig-pick-save" hidden>另存为…</button>
+      <button id="btn-trig-save2" class="primary">另存为…</button>
       <button id="btn-trig-pick-open">选择文件…</button>
       <button id="btn-trig-load2">读取该文件</button>
     </div>
     <div class="form-row">
       <label>或存到配置目录</label>
       <input id="trig-name" placeholder="规则集名" size="14">
-      <button id="btn-trig-save">保存</button>
+      <button id="btn-trig-save">保存到配置目录</button>
       <select id="trig-preset-select"></select>
       <button id="btn-trig-load">读取</button>
       <button id="btn-trig-del">删除</button>
@@ -311,7 +363,9 @@
   </div>
 </section>
 
-<div id="toast" class="toast"></div>
-<script src="app.js?v=generators-1"></script>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="i18n.js?v=1"></script>
+<script src="app.js?v=theme-1"></script>
+<script src="analysis.js?v=1"></script>
 </body>
 </html>

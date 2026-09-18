@@ -9,7 +9,7 @@ def test_api_full_flow(tmp_path):
         page = client.get("/")
         assert page.status_code == 200
         assert page.headers["cache-control"] == "no-store, no-cache, must-revalidate"
-        assert "app.js?v=generators-1" in page.text
+        assert "app.js?v=theme-1" in page.text
 
         # 接口元信息
         r = client.get("/api/interfaces")

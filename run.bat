@@ -3,9 +3,14 @@ setlocal
 cd /d "%~dp0"
 
 rem Prefer the current packaged application.
-rem Launcher revision: byte-auto-advance-3
+rem Launcher revision: trigger-edit-1
 if exist "dist\CanSimTool\CanSimTool.exe" (
-  start "" "dist\CanSimTool\CanSimTool.exe" %*
+  "dist\CanSimTool\CanSimTool.exe" %*
+  if errorlevel 1 (
+    echo CanSimTool failed to start. Keep the complete _internal folder next to the exe.
+    pause
+    exit /b 1
+  )
   exit /b 0
 )
 
