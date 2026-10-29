@@ -21,5 +21,6 @@ dbcs/uploads/
 # 本地临时
 *.log
 *.tmp
+.codegraph/
 # 损坏的临时备份（勿提交）
 *.corrupt-*.bak

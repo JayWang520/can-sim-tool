@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.3"
 VERSION_TUPLE = tuple(int(part) for part in APP_VERSION.split(".")) + (0,)
 
 

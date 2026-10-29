@@ -186,17 +186,24 @@
   <div class="card">
     <h3>故障报文（节点 → DTC → 多包传输 → 打包预览 → 发送）</h3>
     <div class="form-row">
+      <label for="dm1-frame-type">帧型</label>
+      <select id="dm1-frame-type"><option value="extended">扩展帧（J1939）</option><option value="standard">标准帧（自定义载荷）</option></select>
+      <label for="dm1-radix">故障数值进制</label>
+      <select id="dm1-radix"><option value="10">十进制 DEC</option><option value="16">十六进制 HEX</option></select>
+      <span class="hint">进制仅影响 SPN / FMI / OC；ID 始终为 HEX，周期始终为 ms</span>
+    </div>
+    <div class="form-row">
       <label>节点 ID(hex)</label>
       <select id="dm1-node"></select>
       <input id="dm1-id" value="18FECA00" size="12" maxlength="8" placeholder="18FECA00" title="完整 29bit 仲裁 ID">
-      <span class="hint">下拉选模板或直接改 8 位 hex，各段含义见预览第一行</span>
+      <span class="hint" id="dm1-frame-hint">扩展帧 ID：00000000–1FFFFFFF；支持 J1939 多包</span>
     </div>
     <table class="list-table"><thead>
       <tr><th>SPN</th><th>FMI</th><th>发生次数</th><th></th></tr>
     </thead><tbody id="dtc-body"></tbody></table>
     <div class="form-row">
       <button id="btn-dtc-add">+ 添加 DTC</button>
-      <span class="hint">1 个 DTC → 单包直发；≥ 2 个 DTC → J1939 TP.BAM 多包</span>
+      <span class="hint" id="dm1-packet-hint">1 个 DTC → 单包直发；≥ 2 个 DTC → J1939 TP.BAM 多包</span>
     </div>
     <div class="form-row">
       <label>多包 CM 节点 ID</label>
@@ -212,9 +219,10 @@
       <label>保护灯</label><select id="lamp-protect"></select>
       <label>周期(ms)</label><input id="dm1-period" value="1000" size="6">
       <label><input type="checkbox" id="oc-inc"> OC 自动递增</label>
-      <span class="hint">勾选后每个广播周期 DTC 发生次数 +1，数据随时间变化</span>
+      <span class="hint">勾选后，同一故障删除再添加时 OC +1；126 饱和，127 表示不可用</span>
     </div>
-    <h4 class="ptitle">J1939 打包结果预览</h4>
+    <h4 class="ptitle">故障打包结果预览</h4>
+    <div id="dm1-error" role="alert" class="hint"></div>
     <div class="preview-box" id="dm1-preview"></div>
     <div class="form-row">
       <button id="btn-dm1-once" class="primary">单次发送</button>

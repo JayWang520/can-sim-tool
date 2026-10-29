@@ -30,7 +30,7 @@ def test_id_priority_bounds():
 
 
 def test_dtc_roundtrip():
-    for spn, fmi, oc, cm in [(110, 0, 1, 0), (524287, 31, 127, 1), (1, 1, 1, 0), (4126, 18, 9, 0)]:
+    for spn, fmi, oc, cm in [(110, 0, 1, 0), (524287, 31, 127, 0), (1, 1, 1, 0), (4126, 18, 9, 0)]:
         d = DTC(spn=spn, fmi=fmi, oc=oc, cm=cm)
         assert len(d.encode()) == 4
         assert DTC.decode(d.encode()) == d

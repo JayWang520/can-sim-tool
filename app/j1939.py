@@ -67,8 +67,8 @@ class BamReassembler:
     def clear(self) -> None:
         self._sessions.clear()
 
-# 故障灯状态值（每种灯 2bit）：0=灭 1=亮 2=闪烁 3=不可用
-LAMP_OFF, LAMP_ON, LAMP_BLINK, LAMP_NA = 0, 1, 2, 3
+# 状态字节：0=灭，1=亮，2=保留，3=不可用；闪烁由第二字节控制。
+LAMP_OFF, LAMP_ON, LAMP_NA = 0, 1, 3
 
 
 # --------------------------------------------------------------------- ID
@@ -114,7 +114,7 @@ class DTC:
     spn: int  # 可疑参数编号 19bit
     fmi: int  # 故障模式标识符 5bit
     oc: int = 1  # 发生次数 7bit
-    cm: int = 0  # 转换方式 1bit: 0=OBDII 1=SAE
+    cm: int = 0  # 0=Version 4；不支持 CM=1 的早期转换方法
 
     def __post_init__(self) -> None:
         self.encode()  # 触发字段范围校验
@@ -124,31 +124,41 @@ class DTC:
             raise ValueError(f"SPN 超出 19bit: {self.spn}")
         if not 0 <= self.fmi <= 0x1F:
             raise ValueError(f"FMI 超出 5bit: {self.fmi}")
+        if not 0 <= self.oc <= 127:
+            raise ValueError(f"OC 须为 0-127: {self.oc}")
+        if self.cm != 0:
+            raise ValueError("仅支持 CM=0 (J1939 Version 4)，不支持旧式 CM=1")
         b0 = self.spn & 0xFF
         b1 = (self.spn >> 8) & 0xFF
-        b2 = ((self.spn >> 16) & 0x07) | ((self.fmi & 0x1F) << 3)
+        b2 = (((self.spn >> 16) & 0x07) << 5) | (self.fmi & 0x1F)
         b3 = (self.oc & 0x7F) | ((self.cm & 0x01) << 7)
         return bytes([b0, b1, b2, b3])
 
     @classmethod
     def decode(cls, raw: bytes) -> "DTC":
-        spn = raw[0] | (raw[1] << 8) | ((raw[2] & 0x07) << 16)
-        fmi = (raw[2] >> 3) & 0x1F
+        if len(raw) != 4:
+            raise ValueError("DTC 必须为 4 字节")
+        spn = raw[0] | (raw[1] << 8) | ((raw[2] >> 5) << 16)
+        fmi = raw[2] & 0x1F
         oc = raw[3] & 0x7F
         cm = (raw[3] >> 7) & 0x01
         return cls(spn=spn, fmi=fmi, oc=oc, cm=cm)
 
 
-def encode_lamps(mil: int = 0, red: int = 0, amber: int = 0, protect: int = 0) -> bytes:
-    """故障灯状态 2 字节。byte0 各灯 2bit，byte1 保留为 0xFF。"""
+def encode_lamps(mil: int = 0, red: int = 0, amber: int = 0, protect: int = 0,
+                 *, flash: int = 0xFF) -> bytes:
+    """byte0 为灯状态，byte1 为闪烁字段（0=慢闪，1=快闪，3=不闪）。"""
     b0 = (mil << 6) | (red << 4) | (amber << 2) | protect
-    return bytes([b0 & 0xFF, 0xFF])
+    return bytes([b0 & 0xFF, flash])
 
 
 def parse_dm1_payload(data: bytes) -> dict:
     """解析 DM1 载荷（单包或重组后）：灯状态 + DTC 列表。"""
+    if len(data) < 6 or (len(data) != 8 and (len(data) - 2) % 4):
+        raise ValueError("DM1 载荷长度无效")
     lamps = data[0]
-    dtcs = [DTC.decode(data[i : i + 4]) for i in range(2, len(data) - 3, 4)]
+    dtcs = [DTC.decode(data[i : i + 4]) for i in range(2, len(data) - 3, 4)
+            if data[i : i + 4] not in (b'\x00' * 4, b'\xff' * 4)]
     return {
         "lamps": {
             "mil": (lamps >> 6) & 0x3,
@@ -157,12 +167,19 @@ def parse_dm1_payload(data: bytes) -> dict:
             "protect": lamps & 0x3,
         },
         "dtcs": [{"spn": d.spn, "fmi": d.fmi, "oc": d.oc, "cm": d.cm} for d in dtcs],
+        "flash": {name: (data[1] >> shift) & 3
+                  for name, shift in (("mil", 6), ("red", 4), ("amber", 2), ("protect", 0))},
     }
 
 
 # ------------------------------------------------------------------- DM1
 def build_dm1_payload(dtcs: list[DTC], lamps: bytes) -> bytes:
-    return bytes(lamps) + b"".join(d.encode() for d in dtcs)
+    if len(lamps) != 2:
+        raise ValueError("灯状态必须为 2 字节")
+    payload = bytes(lamps) + (b"".join(d.encode() for d in dtcs) if dtcs else b'\x00' * 4)
+    if len(payload) > 1785:
+        raise ValueError("TP.BAM 载荷不能超过 1785 字节")
+    return payload
 
 
 def dm1_frames(

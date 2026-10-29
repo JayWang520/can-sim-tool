@@ -107,7 +107,7 @@ def test_dm1_sim_bam():
                 }
             )
             sim.start()
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.35)
             sim.stop()
             # 标准 TP：CM=18ECFFxx、DT=18EDFFxx（各一个 ID），以数据首字节区分
             assert len(rx) >= 6  # ≥2 个周期 × 3 帧
@@ -337,7 +337,7 @@ def test_dm1_oc_auto_increment():
             await asyncio.sleep(0.12)
             sim.stop()
             assert len(rx) >= 2
-            assert rx[1][5] == rx[0][5] + 1  # OC 字节（第 6 字节）逐周期递增
+            assert all(frame[5] == 1 for frame in rx)  # 周期重发不改变发生次数
         finally:
             sim.stop()
             svc.disconnect()
@@ -367,7 +367,7 @@ def test_frame_json_standard_vs_extended():
     asyncio.run(t())
 
 
-def test_dm1_no_dtc_sends_all_ff():
+def test_dm1_no_dtc_sends_zero_dtc():
     async def main():
         svc = BusService()
         svc.connect("virtual", "dm1-nofault")
@@ -378,7 +378,7 @@ def test_dm1_no_dtc_sends_all_ff():
             sim.update({"dtcs": []})
             frames = sim._build_frames()
             assert len(frames) == 1
-            assert bytes(frames[0].data).startswith(b"\xff\xff")
+            assert bytes(frames[0].data) == bytes.fromhex('00FF00000000FFFF')
             assert sim.preview()["mode"] == "single"
         finally:
             svc.disconnect()

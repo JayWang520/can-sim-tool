@@ -452,7 +452,7 @@ async def dm1_start():
 async def dm1_send_once():
     """立即按当前配置打包并发送一组 DM1（不启动周期广播）。"""
     try:
-        return dm1.send_once()
+        return await dm1.send_once()
     except RuntimeError as e:
         raise HTTPException(400, str(e))
 
@@ -478,6 +478,7 @@ async def apply_scenario(file: str):
     if not path.exists():
         raise HTTPException(404, "场景不存在")
     cfg = json.loads(path.read_text(encoding="utf-8"))
+    cfg.setdefault('extended', True)  # 旧版场景均为 J1939 扩展帧
     return dm1.update(cfg)
 
 
@@ -678,7 +679,7 @@ def _apply_preset(data: dict) -> int:
         except (KeyError, ValueError):
             continue  # 跳过坏任务，其余照常恢复
     if "dm1" in data:
-        dm1.update(data["dm1"])
+        dm1.update({"extended": True, **data["dm1"]})
     if "triggers" in data:
         triggers.replace(data["triggers"])
     return created

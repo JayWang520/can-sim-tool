@@ -1,6 +1,15 @@
 /* UI-only localization. Never translate input values, file names or frame data. */
 (() => {
   const en = {
+    '扩展帧（J1939）':'Extended frame (J1939)',
+    '标准帧（自定义载荷）':'Standard frame (custom payload)',
+    '故障数值进制':'Fault value radix', '十进制 DEC':'Decimal DEC', '十六进制 HEX':'Hexadecimal HEX',
+    '进制仅影响 SPN / FMI / OC；ID 始终为 HEX，周期始终为 ms':'Radix applies to SPN / FMI / OC only. IDs use HEX; period uses ms.',
+    '扩展帧 ID：00000000–1FFFFFFF；支持 J1939 多包':'Extended ID: 00000000–1FFFFFFF; J1939 multi-packet supported.',
+    '标准帧 ID：000–7FF；最多 1 个 DTC，自定义载荷（非 J1939）':'Standard ID: 000–7FF; one DTC maximum; custom payload (not J1939).',
+    '标准帧最多 1 个 DTC；多故障请切换扩展帧':'Standard frames support one DTC. Switch to extended frames for multiple faults.',
+    '标准帧 · 11-bit ID · 自定义故障载荷（非 J1939）':'Standard frame · 11-bit ID · Custom fault payload (not J1939)',
+    '故障打包结果预览':'Fault frame preview',
     'CAN 模拟收发工具':'CAN Test Workbench', '主题':'Theme', '语言':'Language', '版本':'Version',
     '深色':'Dark', '浅色':'Light', '跟随系统':'System', '主导航':'Main navigation',
     '未连接':'Disconnected', '已连接':'Connected', '总线':'Bus', '接收':'Receive', '发送':'Transmit',
@@ -38,7 +47,8 @@
     'TP.CM 通告帧完整 29bit ID':'Full 29-bit TP.CM announcement ID', 'TP.DT 数据帧完整 29bit ID':'Full 29-bit TP.DT data ID',
     '留空 = 自动跟随节点 ID（标准 TP：EC/ED + 优先级 + SA）':'Blank follows the node ID automatically (standard TP: EC/ED + priority + SA).',
     'MIL 灯':'MIL', '红灯':'Red lamp', '黄灯':'Amber lamp', '保护灯':'Protect lamp', 'OC 自动递增':'Auto-increment OC',
-    '勾选后每个广播周期 DTC 发生次数 +1，数据随时间变化':'When enabled, each broadcast cycle increments DTC occurrence counts by one.',
+    '勾选后，同一故障删除再添加时 OC +1；126 饱和，127 表示不可用':'OC increments when a removed fault is added again; saturates at 126; 127 means unavailable.',
+    '无 DTC 时发送全零故障码的 DM1':'Without DTCs, DM1 sends an all-zero DTC.',
     'J1939 打包结果预览':'J1939 frame preview', '单次发送':'Send once', '启动周期广播':'Start broadcast',
     '停止广播':'Stop broadcast', '预置场景':'Scenarios', '加载场景':'Load scenario',
     '打开文件与离线分析':'File analysis', '工作表（空=第一张）':'Sheet (blank = first)', 'ID 进制':'ID base',
@@ -130,6 +140,7 @@
     [/^已恢复 (\d+) 条规则$/, (_,a) => `Loaded ${a} rules`],
     [/^已加载场景：(.*)$/, (_,a) => `Loaded scenario: ${a}`],
     [/^已按 J1939 打包发送 (\d+) 帧$/, (_,a) => `Transmitted ${a} J1939 frames`],
+    [/^已发送 (\d+) 帧故障数据$/, (_,a) => `Transmitted ${a} fault frames`],
     [/^● 周期广播中（已发 (\d+) 帧）$/, (_,a) => `● Broadcasting (${a} frames sent)`],
     [/^错误：(.*)$/, (_,a) => `Error: ${a}`],
     [/^回放中 (\d+)\/(\d+)$/, (_,a,b) => `Replaying ${a}/${b}`],

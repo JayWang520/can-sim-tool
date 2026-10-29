@@ -606,56 +606,138 @@ setInterval(() => {
   if ($("tab-rx").classList.contains("active") && !paused) refreshFrameStatistics();
 }, 1000);
 
+let dm1Radix = 10;
+let dm1FrameType = 'extended';
+const dm1Ids = {extended: '18FECA00', standard: '123'};
+
+function parseFaultNumber(value, name, max, radix = dm1Radix) {
+  const text = String(value).trim();
+  const hexPrefix = /^0x/i.test(text);
+  const digits = hexPrefix ? text.slice(2) : text;
+  const base = hexPrefix ? 16 : radix;
+  if (!(base === 16 ? /^[0-9a-f]+$/i : /^[0-9]+$/).test(digits)) {
+    throw new Error(`${name}: ${base === 16 ? 'HEX 0-9/A-F' : 'DEC 0-9'}`);
+  }
+  const result = Number.parseInt(digits, base);
+  if (!Number.isSafeInteger(result) || result > max) {
+    throw new Error(`${name}: 0–${max.toString(base).toUpperCase()} (${base === 16 ? 'HEX' : 'DEC'})`);
+  }
+  return result;
+}
+
+function formatFaultNumber(value) {
+  return Number(value).toString(dm1Radix).toUpperCase();
+}
+
+function syncDm1Controls() {
+  const standard = $('dm1-frame-type').value === 'standard';
+  for (const id of ['dm1-node', 'tp-cm-id', 'tp-dt-id']) $(id).disabled = standard;
+  $('dm1-id').maxLength = standard ? 3 : 8;
+  $('dm1-id').title = standard ? '11-bit CAN ID (HEX)' : '29-bit CAN ID (HEX)';
+  $('dm1-id').placeholder = standard ? '123' : '18FECA00';
+  $('dm1-frame-hint').textContent = standard
+    ? '标准帧 ID：000–7FF；最多 1 个 DTC，自定义载荷（非 J1939）'
+    : '扩展帧 ID：00000000–1FFFFFFF；支持 J1939 多包';
+  $('dm1-packet-hint').textContent = standard
+    ? '标准帧最多 1 个 DTC；多故障请切换扩展帧'
+    : '1 个 DTC → 单包直发；≥ 2 个 DTC → J1939 TP.BAM 多包';
+  for (const input of document.querySelectorAll('#dtc-body input')) {
+    input.placeholder = dm1Radix === 16 ? 'HEX' : 'DEC';
+    input.title = input.className.slice(2).toUpperCase() + (dm1Radix === 16 ? ' (HEX)' : ' (DEC)');
+    input.setAttribute('aria-label', input.title);
+  }
+}
+
 function dm1ConfigFromForm() {
+  const extended = $('dm1-frame-type').value === 'extended';
   return {
+    extended,
     lamps: {
       mil: $("lamp-mil").value, red: $("lamp-red").value,
       amber: $("lamp-amber").value, protect: $("lamp-protect").value,
     },
-    arb_id: parseHexOrNull($("dm1-id").value),  // 完整 29bit ID，空则不修改
+    arb_id: parseFaultNumber($('dm1-id').value, 'CAN ID', extended ? 0x1FFFFFFF : 0x7FF, 16),
     tp_cm_id: parseHexOrNull($("tp-cm-id").value),  // 多包通告帧完整 ID，空=跟随节点
     tp_dt_id: parseHexOrNull($("tp-dt-id").value),  // 多包数据帧完整 ID，空=跟随节点
-    oc_auto_inc: $("oc-inc").checked,  // DTC 发生次数每周期 +1
+    oc_auto_inc: $("oc-inc").checked,  // 同一故障重新激活时 +1
     period_ms: parseInt($("dm1-period").value) || 1000,
   };
 }
 
 function dtcRows() {
   return [...document.querySelectorAll("#dtc-body tr")].map((tr) => ({
-    spn: parseInt(tr.querySelector(".d-spn").value) || 0,
-    fmi: parseInt(tr.querySelector(".d-fmi").value) || 0,
-    oc: parseInt(tr.querySelector(".d-oc").value) || 1,
+    spn: parseFaultNumber(tr.querySelector('.d-spn').value, 'SPN', 0x7FFFF),
+    fmi: parseFaultNumber(tr.querySelector('.d-fmi').value, 'FMI', 0x1F),
+    oc: parseFaultNumber(tr.querySelector('.d-oc').value, 'OC', 0x7F),
   }));
 }
 
 function addDtcRow(dtc = { spn: 110, fmi: 0, oc: 1 }) {
   const tr = document.createElement("tr");
   tr.innerHTML =
-    `<td><input class="d-spn" value="${dtc.spn}" size="8"></td>` +
-    `<td><input class="d-fmi" value="${dtc.fmi}" size="4"></td>` +
-    `<td><input class="d-oc" value="${dtc.oc}" size="4"></td>` +
+    `<td><input class="d-spn" value="${formatFaultNumber(dtc.spn)}" size="8"></td>` +
+    `<td><input class="d-fmi" value="${formatFaultNumber(dtc.fmi)}" size="4"></td>` +
+    `<td><input class="d-oc" value="${formatFaultNumber(dtc.oc ?? 1)}" size="4"></td>` +
     `<td><button class="small" onclick="this.closest('tr').remove(); pushDm1()">删除</button></td>`;
   $("dtc-body").appendChild(tr);
+  syncDm1Controls();
   tr.querySelectorAll("input").forEach((i) => (i.onchange = pushDm1));
 }
 window.addDtc = () => { addDtcRow(); pushDm1(); };
 $("btn-dtc-add").onclick = window.addDtc;
 
 async function pushDm1() {
+  try {
   const cfg = { ...dm1ConfigFromForm(), dtcs: dtcRows() };
+  if (!cfg.extended && cfg.dtcs.length > 1) throw new Error('标准帧最多 1 个 DTC；多故障请切换扩展帧');
   const st = await api("/api/dm1", "PUT", cfg);
+  [...document.querySelectorAll("#dtc-body tr")].forEach((tr, i) => {
+    const sent = cfg.dtcs[i], saved = st.config.dtcs[i];
+    if (sent && saved && parseFaultNumber(tr.querySelector('.d-spn').value, 'SPN', 0x7FFFF) === sent.spn &&
+        parseFaultNumber(tr.querySelector('.d-fmi').value, 'FMI', 31) === sent.fmi &&
+        parseFaultNumber(tr.querySelector('.d-oc').value, 'OC', 127) === sent.oc) {
+      tr.querySelector('.d-oc').value = formatFaultNumber(saved.oc ?? 1);
+    }
+  });
   renderDm1Status(st);
+  $('dm1-error').textContent = '';
+  } catch (e) {
+    $('dm1-error').textContent = e.message;
+    throw e;
+  }
 }
 document.querySelectorAll("#tab-dm1 input, #tab-dm1 select").forEach((el) => {
   el.onchange = pushDm1;
 });
+$('dm1-radix').onchange = () => {
+  try {
+    const rows = dtcRows(); // 先按旧进制读取，再转换；不改变故障的数值
+    dm1Radix = Number($('dm1-radix').value);
+    $('dtc-body').innerHTML = '';
+    rows.forEach(addDtcRow);
+    $('dm1-error').textContent = '';
+  } catch (e) {
+    $('dm1-radix').value = String(dm1Radix);
+    $('dm1-error').textContent = e.message;
+  }
+};
+$('dm1-frame-type').onchange = () => {
+  dm1Ids[dm1FrameType] = $('dm1-id').value;
+  dm1FrameType = $('dm1-frame-type').value;
+  $('dm1-id').value = dm1Ids[dm1FrameType];
+  $('dm1-id')._sync && $('dm1-id')._sync();
+  syncDm1Controls();
+  return pushDm1();
+};
 
 function renderDm1Status(st) {
   const p = st.preview || {};
   const frames = p.frames || [];
   const cfg = st.config || {};
   let head = "";
-  if (frames.length === 1) {
+  if (frames.length === 1 && frames[0].extended === false) {
+    head = '<div class="pf">标准帧 · 11-bit ID · 自定义故障载荷（非 J1939）</div>';
+  } else if (frames.length === 1) {
     const info = j1939Info(frames[0].id);
     head = `<div class="pf"><span class="pid">${info.prio}</span>优先级` +
       ` ｜ <span class="pid">${info.pgn}</span>PGN` +
@@ -677,7 +759,7 @@ function renderDm1Status(st) {
         `<span class="pdata">${hexGroup(fr.data)}</span>` +
         `<span class="hint">${esc(fr.desc)}</span></div>`
       ).join("")
-    : '<span class="hint">无 DTC 时发送"无故障"DM1（FF FF FF FF ...）</span>';
+    : '<span class="hint">无 DTC 时发送全零故障码的 DM1</span>';
   $("dm1-state").textContent = st.running
     ? `● 周期广播中（已发 ${st.sent_frames} 帧）`
     : st.last_error ? `错误：${st.last_error}` : "○ 未运行";
@@ -685,8 +767,9 @@ function renderDm1Status(st) {
 }
 
 $("btn-dm1-once").onclick = async () => {
+  await pushDm1();
   const r = await api("/api/dm1/send_once", "POST");
-  toast(`已按 J1939 打包发送 ${r.sent} 帧`);
+  toast(`已发送 ${r.sent} 帧故障数据`);
 };
 $("btn-dm1-start").onclick = async () => { await pushDm1(); renderDm1Status(await api("/api/dm1/start", "POST")); };
 $("btn-dm1-stop").onclick = async () => renderDm1Status(await api("/api/dm1/stop", "POST"));
@@ -701,7 +784,12 @@ function backfillDm1Form(cfg) {
   for (const [k, id] of Object.entries({
     mil: "lamp-mil", red: "lamp-red", amber: "lamp-amber", protect: "lamp-protect",
   })) $(id).value = (cfg.lamps || {})[k] || "off";
-  $("dm1-id").value = composeId(cfg);
+  dm1FrameType = cfg.extended === false ? 'standard' : 'extended';
+  $('dm1-frame-type').value = dm1FrameType;
+  dm1Ids.extended = composeId(cfg);
+  dm1Ids.standard = (cfg.standard_id ?? 0x123).toString(16).toUpperCase().padStart(3, '0');
+  $("dm1-id").value = dm1Ids[dm1FrameType];
+  syncDm1Controls();
   $("dm1-id")._sync && $("dm1-id")._sync();
   $("tp-cm-id").value = cfg.tp_cm_id == null ? "" : cfg.tp_cm_id.toString(16).toUpperCase().padStart(8, "0");
   $("tp-dt-id").value = cfg.tp_dt_id == null ? "" : cfg.tp_dt_id.toString(16).toUpperCase().padStart(8, "0");
